@@ -258,9 +258,16 @@ The mobile/desktop app uses these third-party packages. Auditors should verify:
 | Package | Version | Purpose | Security Notes |
 |---------|---------|---------|----------------|
 | `web3dart` | ^2.7.3 | Ethereum/EVM interaction | ✅ [Open source](https://github.com/xclud/web3dart), 500+ GitHub stars, widely used |
-| `pointycastle` | ^3.9.1 | Cryptographic primitives | ✅ [Dart port of BouncyCastle](https://github.com/bcgit/pc-dart), well-established crypto library |
-| `encrypt` | ^5.0.3 | AES encryption | ✅ [Open source](https://github.com/nickvanderlinden/encrypt), uses pointycastle |
-| `bs58check` | ^1.0.2 | Base58Check encoding | ✅ Standard Bitcoin address encoding |
+| `cryptography` | ^2.7.0 | AES-GCM encryption | ✅ [Open source](https://github.com/nickvanderlinden/cryptography), modern Dart crypto library, authenticated encryption |
+| `cryptography_flutter` | ^2.3.2 | Platform-optimized crypto | ✅ [Open source](https://pub.dev/packages/cryptography_flutter), uses native platform APIs (Apple CryptoKit, etc.) |
+| `pointycastle` | ^3.9.1 | secp256k1 curve operations | ✅ [Dart port of BouncyCastle](https://github.com/bcgit/pc-dart), used for TRON address derivation |
+| `blockchain_utils` | ^4.0.0 | Blockchain utilities | ✅ [Open source](https://github.com/nickvanderlinden/blockchain_utils), comprehensive library for Base58, addresses, key derivation |
+
+**Cryptography Implementation Notes:**
+- Uses **AES-256-GCM** (authenticated encryption) instead of AES-CBC
+- GCM mode provides both confidentiality AND integrity verification (tamper detection)
+- PBKDF2-HMAC-SHA256 with 100,000 iterations for key derivation
+- `cryptography_flutter` leverages native platform crypto (Apple CryptoKit, Android Keystore) when available
 
 #### Non-Critical Dependencies
 
