@@ -494,16 +494,34 @@ tron-deploy-mainnet private_key usdt owners threshold:
 # Deploy all contracts to TRON Nile testnet
 # Uses pre-funded account: TLu74WiSAfdwCnawzF6EEXPYkgjSWDbK5b
 # Default USDT: TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile testnet)
-deploy-all-tron usdt_address="TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf":
+deploy-all-tron usdt_address="TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf" private_key="" rpc="":
     #!/usr/bin/env bash
     set -e
-    echo "🚀 Deploying USDTMultisig to TRON Nile Testnet..."
+    echo "🚀 Deploying USDTMultisig to TRON..."
     echo "   8 owners, threshold 2"
     echo ""
     
-    DEPLOYER_KEY="c88c165be5e6d8c58eca95747f8811aa956fa6227c9e0276543bc30d49252d76"
-    DEPLOYER_ADDR="TLu74WiSAfdwCnawzF6EEXPYkgjSWDbK5b"
-    RPC_URL="https://nile.trongrid.io"
+    # Use provided private key or default (Nile testnet pre-funded account)
+    if [ -n "{{private_key}}" ]; then
+        DEPLOYER_KEY="{{private_key}}"
+        # Derive address from private key
+        DEPLOYER_JSON=$(cd tron-utils && cargo run --release --quiet -- derive-address --private-key "$DEPLOYER_KEY" --json 2>/dev/null || echo '{"address":"unknown"}')
+        DEPLOYER_ADDR=$(echo "$DEPLOYER_JSON" | grep -o '"address"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4)
+        if [ -z "$DEPLOYER_ADDR" ] || [ "$DEPLOYER_ADDR" = "unknown" ]; then
+            DEPLOYER_ADDR="(derived from provided key)"
+        fi
+    else
+        DEPLOYER_KEY="c88c165be5e6d8c58eca95747f8811aa956fa6227c9e0276543bc30d49252d76"
+        DEPLOYER_ADDR="TLu74WiSAfdwCnawzF6EEXPYkgjSWDbK5b"
+    fi
+    
+    # Use provided RPC or default (Nile testnet)
+    if [ -n "{{rpc}}" ]; then
+        RPC_URL="{{rpc}}"
+    else
+        RPC_URL="https://nile.trongrid.io"
+    fi
+    
     USDT_ADDRESS="{{usdt_address}}"
     
     echo "📋 Configuration:"
