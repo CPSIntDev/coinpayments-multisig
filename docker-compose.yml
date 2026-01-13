@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # Anvil - Local Ethereum node for development
+  anvil:
+    image: usdt-multisig:latest
+    container_name: usdt-anvil
+    command: anvil
+    ports:
+      - "8545:8545"
+    networks:
+      - multisig-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8545"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Flutter Web App
+  web:
+    image: usdt-multisig:latest
+    container_name: usdt-web
+    command: serve-web
+    ports:
+      - "8080:8080"
+    networks:
+      - multisig-network
+    depends_on:
+      anvil:
+        condition: service_healthy
+    environment:
+      - FLUTTER_WEB_PORT=8080
+
+networks:
+  multisig-network:
+    driver: bridge
