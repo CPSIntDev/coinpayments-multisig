@@ -12,5 +12,8 @@ docs/
 
 # Dotenv file
 .env
-lib/
+
+# Foundry lib dependencies (at root only, not app/lib/)
+/lib/
+
 out-trc20/
