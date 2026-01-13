@@ -1,0 +1,53 @@
+# Git
+.git
+.github
+.gitignore
+
+# Build outputs
+out
+out-trc20
+cache
+broadcast
+app/build
+app/.dart_tool
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+tron-utils/target
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+README.md
+*.md
+
+# Logs
+*.log
+
+# Node
+node_modules
+
+# Flutter
+app/.metadata
+app/ios
+app/android
+app/macos
+app/linux
+app/windows
+app/test
+
+# Rust
+tron-utils/Cargo.lock
+
+# Testing
+.coverage
+coverage
