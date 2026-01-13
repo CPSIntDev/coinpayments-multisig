@@ -44,6 +44,10 @@ contract USDTMultisig is ReentrancyGuard {
     error InsufficientBalance();
     error ZeroAddress();
     error ZeroAmount();
+    error TransactionNotExpired();
+
+    // Constants
+    uint256 public constant EXPIRATION_PERIOD = 1 days;
 
     // Transaction structure
     struct Transaction {
@@ -51,6 +55,7 @@ contract USDTMultisig is ReentrancyGuard {
         uint256 amount;
         bool executed;
         uint256 approvalCount;
+        uint256 createdAt;
     }
 
     // State variables
@@ -127,7 +132,8 @@ contract USDTMultisig is ReentrancyGuard {
                 to: _to,
                 amount: _amount,
                 executed: false,
-                approvalCount: 1 // Start with 1 (submitter's approval)
+                approvalCount: 1, // Start with 1 (submitter's approval)
+                createdAt: block.timestamp
             })
         );
 
@@ -252,6 +258,7 @@ contract USDTMultisig is ReentrancyGuard {
      * @return amount Transfer amount
      * @return executed Whether executed
      * @return approvalCount Number of approvals
+     * @return createdAt Timestamp when transaction was created
      */
     function getTransaction(
         uint256 _txId
@@ -263,11 +270,36 @@ contract USDTMultisig is ReentrancyGuard {
             address to,
             uint256 amount,
             bool executed,
-            uint256 approvalCount
+            uint256 approvalCount,
+            uint256 createdAt
         )
     {
         Transaction storage txn = transactions[_txId];
-        return (txn.to, txn.amount, txn.executed, txn.approvalCount);
+        return (txn.to, txn.amount, txn.executed, txn.approvalCount, txn.createdAt);
+    }
+
+    /**
+     * @notice Check if a transaction is expired
+     * @param _txId Transaction ID
+     * @return Whether the transaction is expired
+     */
+    function isExpired(uint256 _txId) public view txExists(_txId) returns (bool) {
+        Transaction storage txn = transactions[_txId];
+        return !txn.executed && block.timestamp > txn.createdAt + EXPIRATION_PERIOD;
+    }
+
+    /**
+     * @notice Cancel an expired transaction
+     * @dev Any owner can cancel an expired transaction
+     * @param _txId Transaction ID to cancel
+     */
+    function cancelExpiredTransaction(
+        uint256 _txId
+    ) external onlyOwner txExists(_txId) notExecuted(_txId) {
+        if (!isExpired(_txId)) revert TransactionNotExpired();
+
+        transactions[_txId].executed = true; // Mark as executed to prevent further actions
+        emit TransactionCancelled(_txId);
     }
 
     /**

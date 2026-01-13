@@ -113,7 +113,7 @@ contract USDTTransferTest is Test {
             address to,
             uint256 txAmount,
             bool executed,
-            uint256 approvalCount
+            uint256 approvalCount,
         ) = multisig.getTransaction(0);
         assertEq(to, recipient);
         assertEq(txAmount, amount);
@@ -131,7 +131,7 @@ contract USDTTransferTest is Test {
         multisig.approveTransaction(0);
 
         // Check transaction was executed
-        (, , bool executedAfter, ) = multisig.getTransaction(0);
+        (, , bool executedAfter, , ) = multisig.getTransaction(0);
         assertTrue(executedAfter, "Transaction should be executed");
 
         uint256 recipientBalanceAfter = usdt.balanceOf(recipient);
