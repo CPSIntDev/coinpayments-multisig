@@ -651,3 +651,113 @@ deploy-test-tron usdt_address="TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf":
     
     echo ""
     echo "Owner: $DEPLOYER_ADDR (threshold 1)"
+
+# Verify/publish contract source code on Tronscan
+# contract_address: The deployed contract address (TRON base58 format)
+# usdt_address: The USDT token address used in constructor
+# owners: Comma-separated owner addresses used in constructor
+# threshold: The threshold value used in constructor
+# network: "nile" for testnet or "mainnet" for mainnet
+verify-tron contract_address usdt_address owners threshold network="nile":
+    #!/usr/bin/env bash
+    set -e
+    
+    CONTRACT_ADDRESS="{{contract_address}}"
+    USDT_ADDRESS="{{usdt_address}}"
+    OWNERS="{{owners}}"
+    THRESHOLD="{{threshold}}"
+    NETWORK="{{network}}"
+    
+    echo "🔍 Verifying USDTMultisig contract on Tronscan..."
+    echo ""
+    echo "📋 Configuration:"
+    echo "   Contract:  $CONTRACT_ADDRESS"
+    echo "   Network:   $NETWORK"
+    echo "   USDT:      $USDT_ADDRESS"
+    echo "   Owners:    $OWNERS"
+    echo "   Threshold: $THRESHOLD"
+    echo ""
+    
+    # Set API URL based on network
+    if [ "$NETWORK" = "mainnet" ]; then
+        API_URL="https://apilist.tronscanapi.com/api/solidity/contract/verify"
+        TRONSCAN_URL="https://tronscan.org/#/contract/$CONTRACT_ADDRESS/code"
+    else
+        API_URL="https://nileapi.tronscan.org/api/solidity/contract/verify"
+        TRONSCAN_URL="https://nile.tronscan.org/#/contract/$CONTRACT_ADDRESS/code"
+    fi
+    
+    # Flatten the contract source
+    echo "📦 Flattening contract source..."
+    FLATTENED_SOURCE=$(forge flatten src/Multisig.sol)
+    
+    # Convert addresses from base58 to hex for ABI encoding
+    echo "🔧 Encoding constructor arguments..."
+    USDT_HEX=$(cd tron-utils && cargo run --release --quiet -- to-hex --address "$USDT_ADDRESS" 2>/dev/null | tr -d '[:space:]')
+    
+    # Convert owner addresses to hex array
+    OWNERS_HEX=""
+    IFS=',' read -ra OWNER_ARRAY <<< "$OWNERS"
+    for owner in "${OWNER_ARRAY[@]}"; do
+        owner_hex=$(cd tron-utils && cargo run --release --quiet -- to-hex --address "$owner" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$OWNERS_HEX" ]; then
+            OWNERS_HEX="$OWNERS_HEX,$owner_hex"
+        else
+            OWNERS_HEX="$owner_hex"
+        fi
+    done
+    
+    # Get compiler version from foundry.toml
+    SOLC_VERSION="v0.8.28"
+    
+    # Create JSON payload for verification
+    echo "📤 Submitting verification request..."
+    
+    # Save flattened source to temp file to avoid escaping issues
+    TEMP_SOURCE=$(mktemp)
+    echo "$FLATTENED_SOURCE" > "$TEMP_SOURCE"
+    
+    # Create the verification request
+    # Note: Tronscan expects specific format for constructor arguments
+    RESPONSE=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d @- <<PAYLOAD
+{
+    "address": "$CONTRACT_ADDRESS",
+    "contractName": "USDTMultisig",
+    "compilerVersion": "$SOLC_VERSION",
+    "optimization": false,
+    "optimizationRuns": 200,
+    "sourceCode": $(cat "$TEMP_SOURCE" | jq -Rs .),
+    "licenseType": "MIT"
+}
+PAYLOAD
+    )
+    
+    rm -f "$TEMP_SOURCE"
+    
+    echo ""
+    echo "📋 Response from Tronscan:"
+    echo "$RESPONSE" | jq . 2>/dev/null || echo "$RESPONSE"
+    echo ""
+    echo "🔗 View contract on Tronscan:"
+    echo "   $TRONSCAN_URL"
+    echo ""
+    echo "💡 If automatic verification fails, you can verify manually:"
+    echo "   1. Go to: $TRONSCAN_URL"
+    echo "   2. Click 'Verify & Publish'"
+    echo "   3. Use these settings:"
+    echo "      - Contract Name: USDTMultisig"
+    echo "      - Compiler: $SOLC_VERSION"
+    echo "      - Optimization: No"
+    echo "      - License: MIT"
+    echo "   4. Paste the flattened source (run: forge flatten src/Multisig.sol)"
+
+# Generate flattened source code for manual Tronscan verification
+flatten-tron:
+    #!/usr/bin/env bash
+    echo "📦 Generating flattened source code for USDTMultisig..."
+    echo ""
+    forge flatten src/Multisig.sol
+    echo ""
+    echo "💡 Copy the above source code for Tronscan verification"
