@@ -713,28 +713,27 @@ verify-tron contract_address usdt_address owners threshold network="nile":
     # Create JSON payload for verification
     echo "📤 Submitting verification request..."
     
-    # Save flattened source to temp file to avoid escaping issues
-    TEMP_SOURCE=$(mktemp)
-    echo "$FLATTENED_SOURCE" > "$TEMP_SOURCE"
+    # Build JSON payload using jq to handle escaping properly
+    JSON_PAYLOAD=$(jq -n \
+        --arg addr "$CONTRACT_ADDRESS" \
+        --arg name "USDTMultisig" \
+        --arg compiler "$SOLC_VERSION" \
+        --arg source "$FLATTENED_SOURCE" \
+        --arg license "MIT" \
+        '{
+            address: $addr,
+            contractName: $name,
+            compilerVersion: $compiler,
+            optimization: false,
+            optimizationRuns: 200,
+            sourceCode: $source,
+            licenseType: $license
+        }')
     
     # Create the verification request
-    # Note: Tronscan expects specific format for constructor arguments
     RESPONSE=$(curl -s -X POST "$API_URL" \
         -H "Content-Type: application/json" \
-        -d @- <<PAYLOAD
-{
-    "address": "$CONTRACT_ADDRESS",
-    "contractName": "USDTMultisig",
-    "compilerVersion": "$SOLC_VERSION",
-    "optimization": false,
-    "optimizationRuns": 200,
-    "sourceCode": $(cat "$TEMP_SOURCE" | jq -Rs .),
-    "licenseType": "MIT"
-}
-PAYLOAD
-    )
-    
-    rm -f "$TEMP_SOURCE"
+        -d "$JSON_PAYLOAD")
     
     echo ""
     echo "📋 Response from Tronscan:"
@@ -761,3 +760,10 @@ flatten-tron:
     forge flatten src/Multisig.sol
     echo ""
     echo "💡 Copy the above source code for Tronscan verification"
+
+# Export flattened Multisig.sol to a file
+flatten-multisig output="Multisig.flat.sol":
+    #!/usr/bin/env bash
+    echo "📦 Flattening Multisig.sol to {{output}}..."
+    forge flatten src/Multisig.sol > "{{output}}"
+    echo "✅ Saved to {{output}}"
