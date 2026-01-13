@@ -24,6 +24,10 @@ contract USDTMultisig is ReentrancyGuard {
     event TransactionRevoked(uint256 indexed txId, address indexed owner);
     event TransactionExecuted(uint256 indexed txId);
     event TransactionCancelled(uint256 indexed txId);
+    event TransactionExpirationExtended(
+        uint256 indexed txId,
+        uint256 newExpiresAt
+    );
     event OwnerAdded(address indexed owner);
     event OwnerRemoved(address indexed owner);
     event ThresholdChanged(uint256 newThreshold);
@@ -43,6 +47,7 @@ contract USDTMultisig is ReentrancyGuard {
     error ZeroAddress();
     error ZeroAmount();
     error TransactionNotExpired();
+    error TransactionExpired();
 
     // Constants
     uint256 public constant EXPIRATION_PERIOD = 1 days;
@@ -54,6 +59,7 @@ contract USDTMultisig is ReentrancyGuard {
         bool executed;
         uint256 approvalCount;
         uint256 createdAt;
+        uint256 expiresAt;
     }
 
     // State variables
@@ -131,7 +137,8 @@ contract USDTMultisig is ReentrancyGuard {
                 amount: _amount,
                 executed: false,
                 approvalCount: 1, // Start with 1 (submitter's approval)
-                createdAt: block.timestamp
+                createdAt: block.timestamp,
+                expiresAt: block.timestamp + EXPIRATION_PERIOD
             })
         );
 
@@ -150,17 +157,28 @@ contract USDTMultisig is ReentrancyGuard {
     /**
      * @notice Approve a pending transaction
      * @dev Auto-executes if threshold is reached after this approval
+     * @dev Extends expiration time by EXPIRATION_PERIOD on each approval
      * @param _txId Transaction ID to approve
      */
     function approveTransaction(
         uint256 _txId
     ) external onlyOwner txExists(_txId) notExecuted(_txId) nonReentrant {
+        // Check if transaction has expired
+        if (block.timestamp > transactions[_txId].expiresAt)
+            revert TransactionExpired();
         if (approvals[_txId][msg.sender]) revert TransactionAlreadyApproved();
 
         approvals[_txId][msg.sender] = true;
         transactions[_txId].approvalCount++;
 
+        // Extend expiration time on each approval
+        transactions[_txId].expiresAt = block.timestamp + EXPIRATION_PERIOD;
+
         emit TransactionApproved(_txId, msg.sender);
+        emit TransactionExpirationExtended(
+            _txId,
+            transactions[_txId].expiresAt
+        );
 
         // Auto-execute if threshold reached
         if (transactions[_txId].approvalCount >= threshold) {
@@ -170,11 +188,15 @@ contract USDTMultisig is ReentrancyGuard {
 
     /**
      * @notice Revoke approval for a transaction
+     * @dev Cannot revoke if transaction is expired
      * @param _txId Transaction ID to revoke
      */
     function revokeApproval(
         uint256 _txId
     ) external onlyOwner txExists(_txId) notExecuted(_txId) {
+        // Check if transaction has expired
+        if (block.timestamp > transactions[_txId].expiresAt)
+            revert TransactionExpired();
         if (!approvals[_txId][msg.sender]) revert TransactionNotApproved();
 
         approvals[_txId][msg.sender] = false;
@@ -184,7 +206,7 @@ contract USDTMultisig is ReentrancyGuard {
 
         // Cancel transaction if no approvals remain
         if (transactions[_txId].approvalCount == 0) {
-            transactions[_txId].executed = true; // Mark as executed to prevent further actions
+            delete transactions[_txId]; // Mark as executed to prevent further actions
             emit TransactionCancelled(_txId);
         }
     }
@@ -257,6 +279,7 @@ contract USDTMultisig is ReentrancyGuard {
      * @return executed Whether executed
      * @return approvalCount Number of approvals
      * @return createdAt Timestamp when transaction was created
+     * @return expiresAt Timestamp when transaction expires (extended on each approval)
      */
     function getTransaction(
         uint256 _txId
@@ -269,7 +292,8 @@ contract USDTMultisig is ReentrancyGuard {
             uint256 amount,
             bool executed,
             uint256 approvalCount,
-            uint256 createdAt
+            uint256 createdAt,
+            uint256 expiresAt
         )
     {
         Transaction storage txn = transactions[_txId];
@@ -278,7 +302,8 @@ contract USDTMultisig is ReentrancyGuard {
             txn.amount,
             txn.executed,
             txn.approvalCount,
-            txn.createdAt
+            txn.createdAt,
+            txn.expiresAt
         );
     }
 
@@ -291,9 +316,22 @@ contract USDTMultisig is ReentrancyGuard {
         uint256 _txId
     ) public view txExists(_txId) returns (bool) {
         Transaction storage txn = transactions[_txId];
-        return
-            !txn.executed &&
-            block.timestamp > txn.createdAt + EXPIRATION_PERIOD;
+        return !txn.executed && block.timestamp > txn.expiresAt;
+    }
+
+    /**
+     * @notice Get remaining time until transaction expires
+     * @param _txId Transaction ID
+     * @return Seconds until expiration (0 if already expired)
+     */
+    function getTimeUntilExpiration(
+        uint256 _txId
+    ) external view txExists(_txId) returns (uint256) {
+        Transaction storage txn = transactions[_txId];
+        if (txn.executed || block.timestamp > txn.expiresAt) {
+            return 0;
+        }
+        return txn.expiresAt - block.timestamp;
     }
 
     /**
