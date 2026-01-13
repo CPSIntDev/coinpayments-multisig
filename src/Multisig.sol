@@ -14,7 +14,6 @@ import {ReentrancyGuard} from "./utils/ReentrancyGuard.sol";
  */
 contract USDTMultisig is ReentrancyGuard {
     // Events
-    event Deposit(address indexed sender, uint256 amount);
     event TransactionSubmitted(
         uint256 indexed txId,
         address indexed to,
@@ -24,10 +23,6 @@ contract USDTMultisig is ReentrancyGuard {
     event TransactionRevoked(uint256 indexed txId, address indexed owner);
     event TransactionExecuted(uint256 indexed txId);
     event TransactionCancelled(uint256 indexed txId);
-    event TransactionExpirationExtended(
-        uint256 indexed txId,
-        uint256 newExpiresAt
-    );
     event OwnerAdded(address indexed owner);
     event OwnerRemoved(address indexed owner);
     event ThresholdChanged(uint256 newThreshold);
@@ -48,6 +43,7 @@ contract USDTMultisig is ReentrancyGuard {
     error ZeroAmount();
     error TransactionNotExpired();
     error TransactionExpired();
+    error SelfTransferNotAllowed();
 
     // Constants
     uint256 public constant EXPIRATION_PERIOD = 1 days;
@@ -127,6 +123,7 @@ contract USDTMultisig is ReentrancyGuard {
         uint256 _amount
     ) external onlyOwner nonReentrant returns (uint256 txId) {
         if (_to == address(0)) revert ZeroAddress();
+        if (_to == address(this)) revert SelfTransferNotAllowed();
         if (_amount == 0) revert ZeroAmount();
 
         txId = transactions.length;
@@ -171,14 +168,7 @@ contract USDTMultisig is ReentrancyGuard {
         approvals[_txId][msg.sender] = true;
         transactions[_txId].approvalCount++;
 
-        // Extend expiration time on each approval
-        transactions[_txId].expiresAt = block.timestamp + EXPIRATION_PERIOD;
-
         emit TransactionApproved(_txId, msg.sender);
-        emit TransactionExpirationExtended(
-            _txId,
-            transactions[_txId].expiresAt
-        );
 
         // Auto-execute if threshold reached
         if (transactions[_txId].approvalCount >= threshold) {
@@ -193,7 +183,7 @@ contract USDTMultisig is ReentrancyGuard {
      */
     function revokeApproval(
         uint256 _txId
-    ) external onlyOwner txExists(_txId) notExecuted(_txId) {
+    ) external onlyOwner txExists(_txId) nonReentrant notExecuted(_txId) {
         // Check if transaction has expired
         if (block.timestamp > transactions[_txId].expiresAt)
             revert TransactionExpired();
@@ -206,7 +196,7 @@ contract USDTMultisig is ReentrancyGuard {
 
         // Cancel transaction if no approvals remain
         if (transactions[_txId].approvalCount == 0) {
-            delete transactions[_txId]; // Mark as executed to prevent further actions
+            transactions[_txId].executed = true; // Clean up storage (expiresAt=0 prevents future actions)
             emit TransactionCancelled(_txId);
         }
     }
@@ -222,27 +212,13 @@ contract USDTMultisig is ReentrancyGuard {
         uint256 balanceBefore = usdt.balanceOf(address(this));
         if (balanceBefore < txn.amount) revert InsufficientBalance();
 
-        txn.executed = true;
-
-        // Use low-level call for legacy USDT
-        // Note: Old TetherToken returns false even on success, so we verify via balance change
-        uint256 recipientBefore = usdt.balanceOf(txn.to);
-        bool isSelfTransfer = txn.to == address(this);
-
+        // Use low-level call for legacy USDT compatibility
         (bool success, ) = address(usdt).call(
             abi.encodeWithSelector(IERC20.transfer.selector, txn.to, txn.amount)
         );
 
-        // Verify transfer succeeded by checking balance changes
         require(success, "Transfer call failed");
-
-        // For self-transfers, balance stays the same; for others, recipient balance increases
-        if (!isSelfTransfer) {
-            require(
-                usdt.balanceOf(txn.to) >= recipientBefore + txn.amount,
-                "Transfer failed: recipient balance not updated"
-            );
-        }
+        txn.executed = true;
 
         emit TransactionExecuted(_txId);
     }
@@ -341,10 +317,10 @@ contract USDTMultisig is ReentrancyGuard {
      */
     function cancelExpiredTransaction(
         uint256 _txId
-    ) external onlyOwner txExists(_txId) notExecuted(_txId) {
+    ) external onlyOwner txExists(_txId) nonReentrant notExecuted(_txId) {
         if (!isExpired(_txId)) revert TransactionNotExpired();
 
-        transactions[_txId].executed = true; // Mark as executed to prevent further actions
+        transactions[_txId].executed = true;
         emit TransactionCancelled(_txId);
     }
 

@@ -6,6 +6,16 @@ import {USDTMultisig} from "../src/Multisig.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /**
+ * @title MockContractReceiver
+ * @notice A simple contract that can receive ERC20 tokens
+ * @dev Used to test sending USDT to a smart contract
+ */
+contract MockContractReceiver {
+    // This contract can receive ERC20 tokens
+    // No special logic needed - just a valid contract address
+}
+
+/**
  * @title MockTetherToken
  * @notice Mock implementation of TetherToken for testing
  * @dev Mimics the TRC20 USDT interface (issue instead of mint)
@@ -126,7 +136,8 @@ contract USDTMultisigTest is Test {
             uint256 amount,
             bool executed,
             uint256 approvalCount,
-            uint256 createdAt
+            uint256 createdAt,
+
         ) = multisig.getTransaction(txId);
         assertEq(to, recipient);
         assertEq(amount, TRANSFER_AMOUNT);
@@ -174,9 +185,8 @@ contract USDTMultisigTest is Test {
         multisig.approveTransaction(txId);
 
         // Verify auto-executed
-        (, , bool executed, uint256 approvalCount, ) = multisig.getTransaction(
-            txId
-        );
+        (, , bool executed, uint256 approvalCount, , ) = multisig
+            .getTransaction(txId);
         assertTrue(executed);
         assertEq(approvalCount, 2);
         assertEq(usdt.balanceOf(recipient), TRANSFER_AMOUNT);
@@ -207,9 +217,8 @@ contract USDTMultisigTest is Test {
         multisig3.revokeApproval(txId);
 
         assertFalse(multisig3.isApproved(txId, owner2));
-        (, , bool executed, uint256 approvalCount, ) = multisig3.getTransaction(
-            txId
-        );
+        (, , bool executed, uint256 approvalCount, , ) = multisig3
+            .getTransaction(txId);
         assertEq(approvalCount, 1);
         assertFalse(executed); // Still pending, has 1 approval
     }
@@ -219,7 +228,7 @@ contract USDTMultisigTest is Test {
         uint256 txId = multisig.submitTransaction(recipient, TRANSFER_AMOUNT);
 
         // Check initial state - 1 approval from submitter
-        (, , bool executedBefore, uint256 approvalBefore, ) = multisig
+        (, , bool executedBefore, uint256 approvalBefore, , ) = multisig
             .getTransaction(txId);
         assertEq(approvalBefore, 1);
         assertFalse(executedBefore);
@@ -229,7 +238,7 @@ contract USDTMultisigTest is Test {
         multisig.revokeApproval(txId);
 
         // Transaction should be cancelled (marked as executed)
-        (, , bool executedAfter, uint256 approvalAfter, ) = multisig
+        (, , bool executedAfter, uint256 approvalAfter, , ) = multisig
             .getTransaction(txId);
         assertEq(approvalAfter, 0);
         assertTrue(executedAfter); // Marked as executed = cancelled
@@ -285,9 +294,9 @@ contract USDTMultisigTest is Test {
         multisig.approveTransaction(txId2);
 
         // Verify only txId2 is executed
-        (, , bool executed1, , ) = multisig.getTransaction(txId1);
-        (, , bool executed2, , ) = multisig.getTransaction(txId2);
-        (, , bool executed3, , ) = multisig.getTransaction(txId3);
+        (, , bool executed1, , , ) = multisig.getTransaction(txId1);
+        (, , bool executed2, , , ) = multisig.getTransaction(txId2);
+        (, , bool executed3, , , ) = multisig.getTransaction(txId3);
 
         assertFalse(executed1);
         assertTrue(executed2);
@@ -316,11 +325,49 @@ contract USDTMultisigTest is Test {
         );
 
         // Should be already executed
-        (, , bool executed, uint256 approvalCount, ) = multisig1of2
+        (, , bool executed, uint256 approvalCount, , ) = multisig1of2
             .getTransaction(txId);
         assertTrue(executed);
         assertEq(approvalCount, 1);
         assertEq(usdt.balanceOf(recipient), TRANSFER_AMOUNT);
+    }
+
+    function test_TransferToContract() public {
+        // Deploy a contract receiver
+        MockContractReceiver contractReceiver = new MockContractReceiver();
+        address contractAddr = address(contractReceiver);
+
+        // Verify it's a contract
+        uint256 codeSize;
+        assembly {
+            codeSize := extcodesize(contractAddr)
+        }
+        assertTrue(codeSize > 0, "Should be a contract");
+
+        // Initial balance should be 0
+        assertEq(usdt.balanceOf(contractAddr), 0);
+
+        // Submit transaction to send USDT to the contract
+        vm.prank(owner1);
+        uint256 txId = multisig.submitTransaction(
+            contractAddr,
+            TRANSFER_AMOUNT
+        );
+
+        // Owner2 approves -> threshold reached -> auto-execute
+        vm.prank(owner2);
+        multisig.approveTransaction(txId);
+
+        // Verify transaction executed
+        (, , bool executed, , , ) = multisig.getTransaction(txId);
+        assertTrue(executed, "Transaction should be executed");
+
+        // Verify contract received the USDT
+        assertEq(
+            usdt.balanceOf(contractAddr),
+            TRANSFER_AMOUNT,
+            "Contract should have received USDT"
+        );
     }
 
     function test_GetOwners() public view {
@@ -465,7 +512,7 @@ contract USDTMultisigTest is Test {
         multisig.cancelExpiredTransaction(txId);
 
         // Verify transaction is marked as executed (cancelled)
-        (, , bool executed, , ) = multisig.getTransaction(txId);
+        (, , bool executed, , , ) = multisig.getTransaction(txId);
         assertTrue(executed);
 
         // Funds should still be in multisig (not transferred)
@@ -486,7 +533,7 @@ contract USDTMultisigTest is Test {
         multisig.cancelExpiredTransaction(txId);
 
         // Verify transaction is cancelled
-        (, , bool executed, , ) = multisig.getTransaction(txId);
+        (, , bool executed, , , ) = multisig.getTransaction(txId);
         assertTrue(executed);
     }
 
@@ -503,7 +550,7 @@ contract USDTMultisigTest is Test {
         multisig.cancelExpiredTransaction(txId);
 
         // Verify transaction is cancelled
-        (, , bool executed, , ) = multisig.getTransaction(txId);
+        (, , bool executed, , , ) = multisig.getTransaction(txId);
         assertTrue(executed);
     }
 
@@ -591,19 +638,16 @@ contract USDTMultisigTest is Test {
         // Warp time past expiration
         vm.warp(block.timestamp + 1 days + 1);
 
-        // Trying to approve an expired transaction should still work technically
-        // (the contract doesn't prevent approval of expired transactions)
-        // but it's better UX to cancel instead
-        // This test verifies the approval still works if someone really wants to
+        // Trying to approve an expired transaction should revert
         vm.prank(owner2);
+        vm.expectRevert(USDTMultisig.TransactionExpired.selector);
         multisig.approveTransaction(txId);
 
-        // Transaction should be executed since threshold was reached
-        (, , bool executed, uint256 approvalCount, ) = multisig.getTransaction(
-            txId
-        );
-        assertTrue(executed);
-        assertEq(approvalCount, 2);
+        // Transaction should still be pending (not executed, not cancelled)
+        (, , bool executed, uint256 approvalCount, , ) = multisig
+            .getTransaction(txId);
+        assertFalse(executed);
+        assertEq(approvalCount, 1); // Only the original submitter's approval
     }
 
     function test_GetTransaction_ReturnsCreatedAt() public {
@@ -617,7 +661,8 @@ contract USDTMultisigTest is Test {
             uint256 amount,
             bool executed,
             uint256 approvalCount,
-            uint256 createdAt
+            uint256 createdAt,
+
         ) = multisig.getTransaction(txId);
 
         assertEq(to, recipient);
@@ -636,9 +681,9 @@ contract USDTMultisigTest is Test {
         vm.stopPrank();
 
         // Get creation times (all same timestamp)
-        (, , , , uint256 createdAt1) = multisig.getTransaction(txId1);
-        (, , , , uint256 createdAt2) = multisig.getTransaction(txId2);
-        (, , , , uint256 createdAt3) = multisig.getTransaction(txId3);
+        (, , , , uint256 createdAt1, ) = multisig.getTransaction(txId1);
+        (, , , , uint256 createdAt2, ) = multisig.getTransaction(txId2);
+        (, , , , uint256 createdAt3, ) = multisig.getTransaction(txId3);
 
         // All created at the same time
         assertEq(createdAt1, createdAt2);
@@ -665,9 +710,9 @@ contract USDTMultisigTest is Test {
         multisig.cancelExpiredTransaction(txId3);
 
         // All should be cancelled
-        (, , bool exec1, , ) = multisig.getTransaction(txId1);
-        (, , bool exec2, , ) = multisig.getTransaction(txId2);
-        (, , bool exec3, , ) = multisig.getTransaction(txId3);
+        (, , bool exec1, , , ) = multisig.getTransaction(txId1);
+        (, , bool exec2, , , ) = multisig.getTransaction(txId2);
+        (, , bool exec3, , , ) = multisig.getTransaction(txId3);
         assertTrue(exec1);
         assertTrue(exec2);
         assertTrue(exec3);
@@ -680,14 +725,14 @@ contract USDTMultisigTest is Test {
         // Submit transactions at different times
         vm.prank(owner1);
         uint256 txId1 = multisig.submitTransaction(recipient, 100 * 1e6);
-        (, , , , uint256 createdAt1) = multisig.getTransaction(txId1);
+        (, , , , uint256 createdAt1, ) = multisig.getTransaction(txId1);
 
         // Advance 12 hours
         vm.warp(block.timestamp + 12 hours);
 
         vm.prank(owner1);
         uint256 txId2 = multisig.submitTransaction(recipient, 200 * 1e6);
-        (, , , , uint256 createdAt2) = multisig.getTransaction(txId2);
+        (, , , , uint256 createdAt2, ) = multisig.getTransaction(txId2);
 
         // Verify different creation times
         assertEq(createdAt2, createdAt1 + 12 hours);
