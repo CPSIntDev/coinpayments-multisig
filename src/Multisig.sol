@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
@@ -275,7 +275,13 @@ contract USDTMultisig is ReentrancyGuard {
         )
     {
         Transaction storage txn = transactions[_txId];
-        return (txn.to, txn.amount, txn.executed, txn.approvalCount, txn.createdAt);
+        return (
+            txn.to,
+            txn.amount,
+            txn.executed,
+            txn.approvalCount,
+            txn.createdAt
+        );
     }
 
     /**
@@ -283,9 +289,13 @@ contract USDTMultisig is ReentrancyGuard {
      * @param _txId Transaction ID
      * @return Whether the transaction is expired
      */
-    function isExpired(uint256 _txId) public view txExists(_txId) returns (bool) {
+    function isExpired(
+        uint256 _txId
+    ) public view txExists(_txId) returns (bool) {
         Transaction storage txn = transactions[_txId];
-        return !txn.executed && block.timestamp > txn.createdAt + EXPIRATION_PERIOD;
+        return
+            !txn.executed &&
+            block.timestamp > txn.createdAt + EXPIRATION_PERIOD;
     }
 
     /**
