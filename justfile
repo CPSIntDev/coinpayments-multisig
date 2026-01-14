@@ -441,6 +441,60 @@ app8:
     @just app-macos 8
 
 # =====================================
+# TRON Native Multisig App (app_official_tron)
+# =====================================
+
+# Run TRON native multisig app on macOS (with optional instance number)
+# Usage: just app-official-macos [instance]
+app-official-macos instance="":
+    #!/usr/bin/env bash
+    if [ -z "{{instance}}" ]; then
+        echo "🍎 Running TRON Native Multisig app on macOS (default instance)..."
+        cd app_official_tron && flutter run -d macos
+    else
+        echo "🍎 Running TRON Native Multisig app on macOS (instance #{{instance}})..."
+        echo "📦 Storage isolated with prefix: {{instance}}_"
+        cd app_official_tron && flutter run -d macos --dart-define=INSTANCE={{instance}}
+    fi
+
+# Install dependencies for TRON native multisig app
+app-official-deps:
+    @echo "📦 Installing Flutter dependencies for app_official_tron..."
+    cd app_official_tron && flutter pub get
+
+# Run TRON native multisig owner 1 instance
+app_official1:
+    @just app-official-macos 1
+
+# Run TRON native multisig owner 2 instance
+app_official2:
+    @just app-official-macos 2
+
+# Run TRON native multisig owner 3 instance
+app_official3:
+    @just app-official-macos 3
+
+# Run TRON native multisig owner 4 instance
+app_official4:
+    @just app-official-macos 4
+
+# Run TRON native multisig owner 5 instance
+app_official5:
+    @just app-official-macos 5
+
+# Run TRON native multisig owner 6 instance
+app_official6:
+    @just app-official-macos 6
+
+# Run TRON native multisig owner 7 instance
+app_official7:
+    @just app-official-macos 7
+
+# Run TRON native multisig owner 8 instance
+app_official8:
+    @just app-official-macos 8
+
+# =====================================
 # TRON Deployment Commands
 # =====================================
 
